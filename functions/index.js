@@ -61,6 +61,7 @@ exports.sendReportNotification = functions.firestore
 exports.sendApplicationNotification = functions.firestore
   .document('clinics/{clinicId}/usg/{usgId}')
   .onCreate(async (snapshot, context) => {
+    const clinicId = context.params.clinicId;
     const usgId = context.params.usgId;
     const usgData = snapshot.data();
     console.log('Created');
@@ -74,19 +75,21 @@ exports.sendApplicationNotification = functions.firestore
     }
 
     try {
-      const userDoc = await admin
+      const userQuerySnapshot = await admin
         .firestore()
         .collection('users')
-        .doc(userId)
+        .where('clinics', 'array-contains', clinicId)
+        .where('role', '==', 'clinic')
         .get();
 
-      if (!userDoc.exists) {
+      if (!userQuerySnapshot.exists || userQuerySnapshot.empty) {
         console.log(
           `User document ${userId} not found. Skipping notification.`
         );
         return;
       }
 
+      const userDoc = userQuerySnapshot.docs[0];
       const fcmTokens = userDoc.data().fcmTokens;
       if (fcmTokens.length === 0) {
         console.log(
