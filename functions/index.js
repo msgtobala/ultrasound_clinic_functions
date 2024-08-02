@@ -58,7 +58,7 @@ exports.sendReportNotification = functions.firestore
     return null;
   });
 
-exports.sendApplicationNotification = functions.firestore
+exports.sendNewUSGNotification = functions.firestore
   .document('clinics/{clinicId}/usg/{usgId}')
   .onCreate(async (snapshot, context) => {
     const clinicId = context.params.clinicId;
