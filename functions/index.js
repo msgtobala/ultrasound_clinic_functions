@@ -127,6 +127,31 @@ exports.createUser = functions.https.onCall(async (data, context) => {
     });
     return { uid: userRecord.uid };
   } catch (error) {
-    return { error: error.message };
+    console.error("Error creating user:", error);
+    throw new functions.https.HttpsError("internal", error.message);
   }
 });
+
+exports.sendKidEmailVerification = functions.https.onCall(
+  async (data, context) => {
+    const email = data.email;
+    try {
+      const userRecord = await admin.auth().getUserByEmail(email);
+      console.log(email);
+      if (userRecord) {
+        const link = await admin.auth().generateEmailVerificationLink(email);
+        console.log(link);
+        return {
+          status: "success",
+          message: "Email verification link sent to " + link,
+        };
+      }
+    } catch (error) {
+      console.log("Error sending email verification:", error);
+      throw new functions.https.HttpsError(
+        "failed-precondition",
+        "Error sending email verification."
+      );
+    }
+  }
+);
