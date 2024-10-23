@@ -1,5 +1,7 @@
 const functions = require('firebase-functions');
 const admin = require('firebase-admin');
+const firebase = require('firebase/auth');
+const firebaseAuth = require('./firebase');
 admin.initializeApp();
 
 exports.sendReportNotification = functions.firestore
@@ -29,15 +31,13 @@ exports.sendReportNotification = functions.firestore
         .get();
 
       if (!userDoc.exists) {
-        console.log(
-          `User document ${userId} not found. Skipping notification.`
-        );
+        console.log(`User document ${userId} not found. Skipping notificatio`);
         return;
       }
       const fcmTokens = userDoc.data().fcmTokens;
       if (fcmTokens.length === 0) {
         console.log(
-          `No FCM token found for user ${userId}. Skipping notification.`
+          ` No FCM token found for user ${userId}. Skipping notification`
         );
         return;
       }
@@ -64,9 +64,12 @@ exports.sendNewUSGNotification = functions.firestore
     const clinicId = context.params.clinicId;
     const usgId = context.params.usgId;
     const usgData = snapshot.data();
-    console.log('Created');
+
+    console.log('USG document created:', usgId);
 
     const userId = usgData.userId;
+
+    console.log(clinicId);
     if (!userId) {
       console.log(
         'No userId found in the USG document. Skipping notification.'
@@ -78,38 +81,112 @@ exports.sendNewUSGNotification = functions.firestore
       const userQuerySnapshot = await admin
         .firestore()
         .collection('users')
-        .where('clinics', 'array-contains', clinicId)
+        .where('clinics', 'array-contains', clinicId.toString())
         .where('role', '==', 'clinic')
         .get();
+      console.log(userQuerySnapshot.docs[0]);
 
-      if (!userQuerySnapshot.exists || userQuerySnapshot.empty) {
+      if (userQuerySnapshot.empty) {
         console.log(
-          `User document ${userId} not found. Skipping notification.`
+          ` No clinic users found for clinicId ${clinicId}. Skipping notification`
         );
         return;
       }
 
       const userDoc = userQuerySnapshot.docs[0];
       const fcmTokens = userDoc.data().fcmTokens;
-      if (fcmTokens.length === 0) {
+      if (!fcmTokens || fcmTokens.length === 0) {
         console.log(
-          `No FCM token found for user ${userId}. Skipping notification.`
+          `  No FCM token found for user ${userDoc.uid}. Skipping notification.`
         );
         return;
       }
 
-      const payload = {
-        token: fcmTokens[0],
-        notification: {
-          title: 'New USG Report',
-          body: `A new USG report (${usgId}) is created.`,
-        },
-      };
-      await admin.messaging().send(payload);
-      console.log(`Notification sent successfully to user ${userId}`);
+      const payloads = fcmTokens.map((token) => {
+        return {
+          token: token,
+          notification: {
+            title: 'New USG Report',
+            body: `A new USG report (${usgId}) has been created.`,
+          },
+        };
+      });
+
+      await admin.messaging().sendEach(payloads);
+      console.log(`Notification sent successfully to user ${userDoc.uid}`);
     } catch (error) {
       console.error('Error sending notification:', error);
     }
 
     return null;
   });
+
+exports.createUser = functions.https.onCall(async (data, context) => {
+  const { email, password } = data;
+  try {
+    const userCredential = await firebase.createUserWithEmailAndPassword(
+      firebaseAuth.auth,
+      email,
+      password
+    );
+    const user = userCredential.user;
+    await firebase.sendEmailVerification(user);
+    return { uid: user.uid };
+    // const userRecord = await admin.auth().createUser({
+    //   email: data.email,
+    //   password: data.password,
+    // });
+    // return { uid: userRecord.uid };
+  } catch (error) {
+    console.error('Error creating user:', error);
+    throw new functions.https.HttpsError('internal', error.message);
+  }
+});
+
+exports.sendKidEmailVerification = functions.https.onCall(
+  async (data, context) => {
+    const email = data.email;
+    try {
+      const userRecord = await admin.auth().getUserByEmail(email);
+      console.log(email);
+      if (userRecord) {
+        const link = await admin.auth().generateEmailVerificationLink(email);
+        console.log(link);
+        return {
+          status: 'success',
+          message: 'Email verification link sent to ' + link,
+        };
+      }
+    } catch (error) {
+      console.log('Error sending email verification:', error);
+      throw new functions.https.HttpsError(
+        'failed-precondition',
+        'Error sending email verification.'
+      );
+    }
+  }
+);
+
+// exports.sendKidEmailVerification = functions.https.onCall(
+//   async (data, context) => {
+//     const email = data.email;
+//     try {
+//       const userRecord = await admin.auth().getUserByEmail(email);
+//       console.log(email);
+//       if (userRecord) {
+//         const link = await admin.auth().generateEmailVerificationLink(email);
+//         console.log(link);
+//         return {
+//           status: "success",
+//           message: "Email verification link sent to " + link,
+//         };
+//       }
+//     } catch (error) {
+//       console.log("Error sending email verification:", error);
+//       throw new functions.https.HttpsError(
+//         "failed-precondition",
+//         "Error sending email verification."
+//       );
+//     }
+//   }
+// );
