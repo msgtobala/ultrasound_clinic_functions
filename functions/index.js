@@ -243,6 +243,61 @@ exports.suggestSuperCategoryIndividual = functions.https.onCall(
   }
 );
 
+exports.suggestNewSubSubjects = functions.https.onCall(
+  async (data, context) => {
+    const { subject, existingSubSubjects } = data;
+    const { OpenAI } = await openaiImport();
+
+    const openai = new OpenAI({
+      apiKey: "API_KEY",
+    });
+
+    try {
+      const prompt = `
+        I have a subject called "${subject}". There can be sub-subjects under this subject, such as "${existingSubSubjects.join(
+        ","
+      )}". Please suggest up to 5 new sub-subjects for "${subject}" that are distinct from the provided sub-subjects. 
+
+        Format the response in the following way:
+        1. Sub Subject 1
+        2. Sub Subject 2
+        3. Sub Subject 3
+        4. Sub Subject 4
+        5. Sub Subject 5
+
+        Do not include duplicates or similar topics from the provided sub-subjects. The suggestions should be creative yet relevant to the main subject.
+      `;
+
+      const response = await openai.chat.completions.create({
+        messages: [
+          {
+            role: "system",
+            content:
+              "You are an assistant that categorizes and suggests relevant super categories from the given list",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        model: "gpt-3.5-turbo",
+      });
+      const suggestions = response.choices[0].message.content
+        .trim()
+        .split("\n")
+        .filter(Boolean);
+
+      return { suggestions };
+    } catch (e) {
+      console.error("Error suggesting Sub Subjects:", e);
+      throw new functions.https.HttpsError(
+        "internal",
+        "Error suggesting categories"
+      );
+    }
+  }
+);
+
 exports.suggestCategories = functions.https.onCall(async (data, context) => {
   const { superCategory, existingCategories, suggestions } = data;
   const { OpenAI } = await openaiImport();
